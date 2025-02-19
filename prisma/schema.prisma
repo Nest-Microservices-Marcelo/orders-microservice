@@ -21,13 +21,33 @@ enum OrderStatus {
 
 model Order {
   id          String @id @default(uuid())
+  //totalAmount sirve para el total del precio de la orden
+  //totalItems  sirve para el total de items en la orden
   totalAmount Float
   totalItems  Int
 
-  status OrderStatus
+  // status sirve para el estado de la orden: PENDING, DELIVERED, CANCELLED
+  status OrderStatus @default(PENDING)
+  // cuando se crea la orden, no se crea pagada, por eso el campo paid es false
   paid   Boolean     @default(false)
+  //paidAt en null todavia no hay pasarela de pagos
   paidAt DateTime?
 
   cratedAt  DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  //cuando se formatea el codigo se crea una relacion entre el producto y la orden
+  OrderItem OrderItem[]
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  //orderId sirve para el id del producto en la DB de SQLite
+  productId Int
+  quantity  Int
+  price     Float
+
+  //esta es la relacion entre el producto y la orden
+  Order   Order?  @relation(fields: [orderId], references: [id])
+  orderId String?
 }

@@ -1,25 +1,114 @@
-import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PrismaClient } from '@prisma/client';
-import { RpcException } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto';
+import { PRODUCT_SERVICE } from 'src/config';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger('OrdersService');
+
+  constructor(
+    //TRAEMOS LA BASE DE DATOS DE PRODUCTS-MS
+    @Inject(PRODUCT_SERVICE) private readonly productsClient: ClientProxy,
+  ) {
+    super();
+  }
 
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Database connected');
   }
 
-  create(createOrderDto: CreateOrderDto) {
-    return this.order.create({
-      data: createOrderDto,
-    });
+  //CREATE
+  async create(createOrderDto: CreateOrderDto) {
+    try {
+      //1 - Confirmar los ids de los productos
+      const productsIds = createOrderDto.items.map((item) => item.productId);
+
+      const products: any[] = await firstValueFrom(
+        await this.productsClient.send(
+          { cmd: 'validate_products' },
+          productsIds,
+        ),
+      ); //Usamos el "productsClient" para llamar a la funcion validate_products y pasarles los ids de los productos que quiero traer de products-ms
+
+      //2 - Calculos de los valores
+      const totalAmount = createOrderDto.items.reduce((acc, orderItem) => {
+        const price = products.find(
+          (product) => product.id === orderItem.productId,
+        ).price;
+
+        return acc + price * orderItem.quantity;
+      }, 0);
+
+      const totalItems = createOrderDto.items.reduce((acc, orderItem) => {
+        return acc + orderItem.quantity;
+      }, 0);
+
+      //3 - Crear una transaccion de la base de datos
+      const order = await this.order.create({
+        data: {
+          totalAmount: totalAmount,
+          totalItems: totalItems,
+          OrderItem: {
+            createMany: {
+              data: createOrderDto.items.map((orderItem) => ({
+                //buscamos el precio en la base de datos y no por el orderItem para tener un precio mas preciso
+                price: products.find(
+                  (product) => product.id === orderItem.productId,
+                ).price,
+                productId: orderItem.productId,
+                quantity: orderItem.quantity,
+              })),
+            },
+          },
+        },
+        include: {
+          OrderItem: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true,
+            },
+          },
+        },
+      });
+
+      return {
+        ...order,
+        OrderItem: order.OrderItem.map((orderItem) => ({
+          ...orderItem,
+          name: products.find((product) => product.id === orderItem.productId)
+            .name,
+        })),
+      };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'Error validating products',
+      });
+    }
   }
 
+  // return {
+  //   service: 'Orders Microservice',
+  //   createOrderDto: createOrderDto,
+  // };
+  // return this.order.create({
+  //   data: createOrderDto,
+  // });
+
+  //FIND ALL
   async findAll(orderPaginationDto: OrderPaginationDto) {
     const totalPages = await this.order.count({
       where: {
@@ -45,21 +134,47 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     };
   }
 
+  //FIND ONE
   async findOne(id: string) {
     const order = await this.order.findFirst({
       where: { id },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true,
+          },
+        },
+      },
     });
 
     if (!order) {
       throw new RpcException({
-        message: `Order with ID #${id} not found`,
         status: HttpStatus.NOT_FOUND,
+        message: `Order with ID #${id} not found`,
       });
     }
 
-    return order;
+    //Buscamos el ID los productos que tiene la orden
+    const productsIds = order.OrderItem.map((orderItem) => orderItem.productId);
+
+    //Validamos los productos y los buscamos en la base de datos
+    const products: any[] = await firstValueFrom(
+      await this.productsClient.send({ cmd: 'validate_products' }, productsIds),
+    );
+
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map((orderItem) => ({
+        ...orderItem,
+        name: products.find((product) => product.id === orderItem.productId)
+          .name,
+      })),
+    };
   }
 
+  //CHANGE STATUS
   async changeStatus(changeOrderStatus: ChangeOrderStatusDto) {
     const { id, status } = changeOrderStatus;
 
