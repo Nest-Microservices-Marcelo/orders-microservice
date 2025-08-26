@@ -1,10 +1,11 @@
 import { Controller, ParseUUIDPipe } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
+import { EventPattern, MessagePattern, Payload } from '@nestjs/microservices';
 import { OrdersService } from './orders.service';
 import {
   ChangeOrderStatusDto,
   CreateOrderDto,
   OrderPaginationDto,
+  PaidOrderDto,
 } from './dto';
 
 @Controller()
@@ -45,5 +46,12 @@ export class OrdersController {
   @MessagePattern('validateOrder')
   validateOrder(@Payload('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOne(id);
+  }
+
+  //PAY ORDER
+  // Se puede convinar tanto @EventPattern como @MessagePattern para manejar eventos de microservicios
+  @EventPattern('payment.succeeded') // Escucha el evento que emite el microservicio de payments.service.ts y lo captura
+  paidOrder(@Payload() paidOrderDto: PaidOrderDto) {
+    return this.ordersService.paidOrder(paidOrderDto);
   }
 }

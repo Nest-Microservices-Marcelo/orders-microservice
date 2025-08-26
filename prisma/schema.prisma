@@ -15,6 +15,7 @@ datasource db {
 
 enum OrderStatus {
   PENDING
+  PAID
   DELIVERED
   CANCELLED
 }
@@ -27,17 +28,20 @@ model Order {
   totalItems  Int
 
   // status sirve para el estado de la orden: PENDING, DELIVERED, CANCELLED
-  status OrderStatus @default(PENDING)
+  status         OrderStatus @default(PENDING)
   // cuando se crea la orden, no se crea pagada, por eso el campo paid es false
-  paid   Boolean     @default(false)
+  paid           Boolean     @default(false)
   //paidAt en null todavia no hay pasarela de pagos
-  paidAt DateTime?
+  paidAt         DateTime?
+  //Guardamos el id del stripePaymentId
+  stripeChargeId String?
 
   cratedAt  DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   //cuando se formatea el codigo se crea una relacion entre el producto y la orden
-  OrderItem OrderItem[]
+  OrderItem   OrderItem[] //una orden puede tener muchos items
+  OrderRecipt OrderRecipt? //una orden puede tener un recibo
 }
 
 model OrderItem {
@@ -50,4 +54,16 @@ model OrderItem {
   //esta es la relacion entre el producto y la orden
   Order   Order?  @relation(fields: [orderId], references: [id])
   orderId String?
+}
+
+model OrderRecipt {
+  id String @id @default(uuid())
+
+  order   Order? @relation(fields: [orderId], references: [id]) // Relacion con la orden
+  orderId String @unique // Esto asegura que cada orden tenga un solo recibo
+
+  reciptUrl String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
