@@ -7,7 +7,7 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 async function bootstrap() {
   const logger = new Logger('OrdersMS-main');
 
-  //Configuracion para transporte de datos atraves de TCP
+  //Configuracion para transporte de datos atraves de NATS
   const app = await NestFactory.createMicroservice<MicroserviceOptions>(
     AppModule,
     {
