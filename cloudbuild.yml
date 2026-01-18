@@ -13,7 +13,8 @@ steps:
         'push',
         'southamerica-east1-docker.pkg.dev/tienda-microservices-479501/image-registry/orders-ms',
       ]
-
+options:
+  logging: CLOUD_LOGGING_ONLY
 availableSecrets:
   secretManager:
     - versionName: projects/44891427378/secrets/orders_database_url/versions/1
